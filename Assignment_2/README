@@ -1,0 +1,15 @@
+# SIP 
+repository for signal and image processing assignments
+
+
+This code has been implimented by:
+Assignment Group 8
+Marcus Frehr Friis-Hansen, Noah Wenneberg Junge,  Simone Skovgaard
+
+To run the code, please make sure you have these libraries installed in you environment:
+
+pip install...
+
+soundfile
+numpy
+matplotlib
