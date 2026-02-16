@@ -7,7 +7,6 @@ from skimage.color import rgb2hsv, hsv2rgb
 
 
 ##### 1.1 #####
-
 def gamma_transform(I, gamma):
     return I ** gamma
 
