@@ -4,7 +4,7 @@ Signal and Image Processing
 """
 
 import matplotlib
-matplotlib.use("Agg")  # Non-interactive backend – save figures without display
+matplotlib.use("Agg")  
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -286,34 +286,34 @@ def angular_average_power_spectrum(image, freq_range=(10, 100), angle_bin_size=1
 def plot_angular_template(freq_range=(10, 100), angle_bin_size=10, image_shape=(480, 480)):
     """
     Re-implement the angular bin template shown in Figure 1 of the assignment.
-    Produces a color-wheel style annular ring where each angular bin has a
-    distinct color, with a colorbar mapping color to angle.
     """
     M, N = image_shape
     cy, cx = M // 2, N // 2
+    size = max(M, N)
 
-    # Create coordinate grids
-    y, x = np.ogrid[:M, :N]
-    dist = np.sqrt((y - cy) ** 2 + (x - cx) ** 2)
-    angle = np.degrees(np.arctan2(y - cy, x - cx)) % 360
+    fig, ax = plt.subplots(figsize=(7, 7), subplot_kw={"projection": "polar"})
 
-    # Mask for the frequency range (annular ring)
-    freq_mask = (dist >= freq_range[0]) & (dist <= freq_range[1])
-
-    # Build image: assign each pixel its angular bin value
-    template = np.full((M, N), np.nan)
     n_bins = int(360 / angle_bin_size)
-    for i in range(n_bins):
-        a_low = i * angle_bin_size
-        a_high = a_low + angle_bin_size
-        bin_mask = freq_mask & (angle >= a_low) & (angle < a_high)
-        template[bin_mask] = a_low
+    angles_rad = np.deg2rad(np.arange(0, 360, angle_bin_size))
 
-    fig, ax = plt.subplots(figsize=(6, 6))
-    im = ax.imshow(template, cmap="hsv", vmin=0, vmax=360)
-    ax.set_axis_off()
-    cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-    cbar.set_label("Angle (degrees)")
+    # Draw angular bins as sectors in the frequency range
+    for a_rad in angles_rad:
+        width = np.deg2rad(angle_bin_size)
+        # Normalize radii for display
+        r_inner = freq_range[0] / (size // 2)
+        r_outer = freq_range[1] / (size // 2)
+        ax.bar(
+            a_rad, r_outer - r_inner, width=width, bottom=r_inner,
+            edgecolor="black", linewidth=0.5, fill=True, alpha=0.3, color="blue"
+        )
+
+    ax.set_title(
+        f"Angular Bins ({angle_bin_size}\u00b0 bins, "
+        f"freq range [{freq_range[0]}-{freq_range[1]}])",
+        pad=20
+    )
+    ax.set_thetagrids(np.arange(0, 360, angle_bin_size))
+    ax.tick_params(labelsize=7)
 
     plt.tight_layout()
     plt.savefig(os.path.join(OUTPUT_DIR, "part_2_4_template.png"), dpi=150)
