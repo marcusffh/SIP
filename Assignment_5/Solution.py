@@ -81,7 +81,7 @@ def part_1_1():
     print("Part 1.1: Spectrogram of progression.wav")
     print("=" * 60)
 
-    path = os.path.join(BASE, "progression.wav")
+    path = os.path.join(BASE, "progression.mp4")
     sample_rate = 44100  # known from ffprobe
 
     # The file is AAC-in-M4A despite the .wav extension; decode via ffmpeg
@@ -95,7 +95,7 @@ def part_1_1():
     result = subprocess.run(cmd, capture_output=True)
     audio = np.frombuffer(result.stdout, dtype=np.int16).astype(np.float64)
 
-    window_size = 2048
+    window_size = 2048 *2
     magnitude, t, f = compute_spectrogram(audio, sample_rate, window_size)
 
     fig, ax = plt.subplots(figsize=(12, 5))
@@ -461,39 +461,25 @@ def part_4_3_iii():
     print("Part 4.3.iii: H(0,0,τ) vs τ")
     print("=" * 60)
 
-    # Analytical derivation:
-    #   I(x,y,τ)  = B(x,y) * G(x,y,τ) = G(x,y,√(σ²+τ²))   [eq. 1, B=G(σ)]
-    #   Let s² = σ² + τ²
-    #   ∂²I/∂x²  = I · (x²/s⁴ - 1/s²)
-    #   ∂²I/∂y²  = I · (y²/s⁴ - 1/s²)
-    #   ∇²I      = I · ((x²+y²)/s⁴ - 2/s²)
-    #   H(x,y,τ) = τ^(γ·2) · ∇²I  with γ=1  →  H = τ² · ∇²I
-    #
-    #   At (0,0):
-    #     I(0,0,τ) = 1/(2πs²)
-    #     ∇²I|_{0,0} = (1/(2πs²)) · (-2/s²)  = -1/(πs⁴)
-    #     H(0,0,τ)   = τ² · (-1/(πs⁴))       = -τ² / (π(σ²+τ²)²)
-    #
-    #   Extremum: dH/dτ = 0  →  τ = σ  (minimum, since H(0,0,τ)<0 has maximum |value|)
-
     sigma = 1.0
     tau_vals = np.linspace(0.05, 10, 1000)
-    s_sq = sigma**2 + tau_vals**2
-    H00 = -tau_vals**2 / (np.pi * s_sq**2)
+    theta_sq = sigma**2 + tau_vals**2
+    H00 = -tau_vals / (np.pi * theta_sq**2)
 
-    tau_ext = sigma  # extremal τ
-    H_ext = -(tau_ext**2) / (np.pi * (sigma**2 + tau_ext**2)**2)
+    tau_ext = sigma / np.sqrt(3)
+    H_ext = -tau_ext / (np.pi * (sigma**2 + tau_ext**2)**2)
 
     fig, ax = plt.subplots(figsize=(10, 5))
-    ax.plot(tau_vals, H00, "b-", linewidth=2, label=r"$H(0,0,\tau) = -\tau^2 / [\pi(\sigma^2+\tau^2)^2]$")
+    ax.plot(tau_vals, H00, "b-", linewidth=2, 
+            label=r"$H(0,0,\tau) = -\tau / [\pi(\sigma^2+\tau^2)^2]$")
     ax.axvline(x=tau_ext, color="r", linestyle="--",
-               label=f"Extremum at τ = σ = {tau_ext} (|H| is maximum)")
+               label=rf"Minimum at $\tau = \sigma/\sqrt{{3}}$ = {tau_ext:.3f}")
     ax.axhline(y=0, color="k", linewidth=0.7)
     ax.scatter([tau_ext], [H_ext], color="r", zorder=5)
     ax.set_xlabel(r"$\tau$ (scale parameter)", fontsize=12)
     ax.set_ylabel(r"$H(0,0,\tau)$", fontsize=12)
     ax.set_title(
-        r"Scale-Normalized Laplacian at origin: $H(0,0,\tau) = -\tau^2/[\pi(\sigma^2+\tau^2)^2]$"
+        r"Scale-Normalized Laplacian at origin: $H(0,0,\tau) = -\tau/[\pi(\sigma^2+\tau^2)^2]$"
         f"\n(σ = {sigma})",
         fontsize=11
     )
@@ -502,8 +488,8 @@ def part_4_3_iii():
     plt.tight_layout()
     plt.savefig(os.path.join(OUTPUT_DIR, "part_4_3_iii.png"), dpi=150)
     plt.close()
-    print(f"  H(0,0,τ) = -τ²/[π(σ²+τ²)²]  with σ={sigma}")
-    print(f"  Extremal τ = σ = {tau_ext},  H(0,0,σ) = {H_ext:.6f}")
+    print(f"  H(0,0,τ) = -τ/[π(σ²+τ²)²]  with σ={sigma}")
+    print(f"  Extremal τ = σ/√3 = {tau_ext:.3f},  H(0,0,σ/√3) = {H_ext:.6f}")
     print("  Saved part_4_3_iii.png")
     print()
 
@@ -511,86 +497,68 @@ def part_4_3_iii():
 # =============================================================================
 # Part 4.4 – Blob Detection on sunflower.tiff (150 blobs)
 # =============================================================================
-
 def part_4_4():
     print("=" * 60)
     print("Part 4.4: Blob Detection on sunflower.tiff")
     print("=" * 60)
 
-    # Load and optionally downsample for speed
-    img_pil = Image.open(os.path.join(BASE, "sunflower.tiff")).convert("L")
-    max_dim = 600
-    if max(img_pil.size) > max_dim:
-        scale = max_dim / max(img_pil.size)
-        new_size = (int(img_pil.size[0] * scale), int(img_pil.size[1] * scale))
-        img_pil = img_pil.resize(new_size, Image.LANCZOS)
-    img = np.array(img_pil, dtype=np.float64)
+    # PARAMETERS
+    TAU_MIN           = 2  # minimum blob scale
+    TAU_MAX           = 35# maximum blob scale
+    N_SCALES          = 100 # number of scales to check
+    MIN_DISTANCE      = 4    # min pixels between detections
+    N_BLOBS           = 150   # number of blobs to keep
+
+    #Load image
+    img = np.array(Image.open(os.path.join(BASE, "sunflower.tiff")).convert("L"), dtype=np.float64)
     img_norm = (img - img.min()) / (img.max() - img.min())
-    print(f"  Image size: {img.shape}")
+    print(f"Image size: {img.shape}")
 
-    # Build scale-space of scale-normalized LoG responses
-    # H(x,y,τ) = τ² · ∇²[G(τ) * I(x,y)] = τ² · gaussian_laplace(I, σ=τ)
-    tau_vals = np.logspace(np.log10(2), np.log10(25), 20)
-    H_stack = np.zeros((len(tau_vals), img.shape[0], img.shape[1]))
-    for i, tau in enumerate(tau_vals):
-        H_stack[i] = tau**2 * gaussian_laplace(img_norm, sigma=tau)
+    #Build scale-space
+    # H(x,y,tau) = tau * gaussian_laplacian [eq. 6, gamma=1]
+    tau_vals = np.logspace(np.log10(TAU_MIN), np.log10(TAU_MAX), N_SCALES)
+    H_stack  = np.zeros((N_SCALES, img.shape[0], img.shape[1]))
+    for i, tau in enumerate(tau_vals): 
+        H_stack[i] = tau * gaussian_laplace(img_norm, sigma=tau)
+    print(f"H range: [{H_stack.min():.4f}, {H_stack.max():.4f}]")
 
-    print(f"  Scale range: τ ∈ [{tau_vals[0]:.1f}, {tau_vals[-1]:.1f}], {len(tau_vals)} scales")
+    #Find extrema in scale-space
+    coords_max = peak_local_max( H_stack, min_distance=MIN_DISTANCE, threshold_abs=0.0)
+    coords_min = peak_local_max(-H_stack, min_distance=MIN_DISTANCE, threshold_abs=0.0)
 
-    # Find local maxima (positive LoG: bright blobs on dark background)
-    coords_max = peak_local_max(H_stack,  min_distance=5, threshold_abs=0.0)
-    # Find local minima (negative LoG: dark blobs on bright background)
-    coords_min = peak_local_max(-H_stack, min_distance=5, threshold_abs=0.0)
 
-    # Gather all extrema with their H values
+    #Keep top 150 by absolute value
     all_coords = np.vstack([coords_max, coords_min])
-    vals_max = H_stack[coords_max[:, 0], coords_max[:, 1], coords_max[:, 2]]
-    vals_min = H_stack[coords_min[:, 0], coords_min[:, 1], coords_min[:, 2]]
-    all_vals = np.concatenate([vals_max, vals_min])
-
-    # Keep top 150 by |H|
-    top_idx = np.argsort(-np.abs(all_vals))[:150]
-    top_coords = all_coords[top_idx]  # shape (150, 3): (tau_idx, y, x)
+    all_vals   = H_stack[all_coords[:,0], all_coords[:,1], all_coords[:,2]]
+    top_idx    = np.argsort(-np.abs(all_vals))[:N_BLOBS]
+    top_coords = all_coords[top_idx]
     top_vals   = all_vals[top_idx]
+    is_max     = top_vals > 0
 
-    is_max = top_vals > 0
-    print(f"  Top-150 extrema: {is_max.sum()} maxima (red), {(~is_max).sum()} minima (blue)")
-
-    # Draw circles proportional to τ
+    #Plot
     fig, ax = plt.subplots(figsize=(12, 10))
     ax.imshow(img, cmap="gray")
-
-    for (tau_idx, y, x), val in zip(top_coords[is_max], top_vals[is_max]):
+    for (tau_idx, y, x), is_maximum in zip(top_coords, is_max):
         r = tau_vals[tau_idx] * np.sqrt(2)
-        ax.add_patch(plt.Circle((x, y), r, color="red",  fill=False, linewidth=1.2))
-        ax.plot(x, y, "r.", markersize=3)
-
-    for (tau_idx, y, x), val in zip(top_coords[~is_max], top_vals[~is_max]):
-        r = tau_vals[tau_idx] * np.sqrt(2)
-        ax.add_patch(plt.Circle((x, y), r, color="cyan", fill=False, linewidth=1.2))
-        ax.plot(x, y, "c.", markersize=3)
+        color = "red" if is_maximum else "cyan"
+        ax.add_patch(plt.Circle((x, y), r, color=color, fill=False, linewidth=1.5))
+        ax.plot(x, y, ".", color=color, markersize=4)
 
     from matplotlib.lines import Line2D
-    legend_els = [
-        Line2D([0], [0], marker="o", color="red",  markerfacecolor="none",
-               linestyle="none", label=f"Maxima – bright blobs (n={is_max.sum()})"),
-        Line2D([0], [0], marker="o", color="cyan", markerfacecolor="none",
-               linestyle="none", label=f"Minima – dark blobs (n={(~is_max).sum()})"),
-    ]
-    ax.legend(handles=legend_els, loc="upper right", fontsize=10)
-    ax.set_title(
-        f"Scale-Space Blob Detection: top-150 LoG extrema on sunflower.tiff\n"
-        f"τ ∈ [{tau_vals[0]:.1f}, {tau_vals[-1]:.1f}], 20 scales, radius ∝ τ√2",
-        fontsize=11
-    )
+    ax.legend(handles=[
+    Line2D([0],[0], marker="o", color="cyan", linestyle="none",
+           markerfacecolor="none",
+           label=f"Minima – bright blobs (n={(~is_max).sum()})"),
+
+    Line2D([0],[0], marker="o", color="red", linestyle="none",
+           markerfacecolor="none",
+           label=f"Maxima – dark blobs (n={is_max.sum()})"),
+], loc="upper right", fontsize=15)
     ax.axis("off")
     plt.tight_layout()
     plt.savefig(os.path.join(OUTPUT_DIR, "part_4_4.png"), dpi=150)
     plt.close()
-    print("  Saved part_4_4.png")
-    print()
-
-
+    print("Saved part_4_4.png")
 # =============================================================================
 # Main – Run all parts
 # =============================================================================
