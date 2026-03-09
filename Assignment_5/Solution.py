@@ -55,9 +55,9 @@ def gaussian_2d(X, Y, sigma):
     return (1.0 / (2 * np.pi * sigma**2)) * np.exp(-(X**2 + Y**2) / (2 * sigma**2))
 
 
-# =============================================================================
+# ================================================================
 # Part 1.1 – Spectrogram of progression.wav
-# =============================================================================
+# ====================================================================
 
 def compute_spectrogram(audio, sample_rate, window_size):
     """
@@ -78,13 +78,13 @@ def compute_spectrogram(audio, sample_rate, window_size):
 
 def part_1_1():
     print("=" * 60)
-    print("Part 1.1: Spectrogram of progression.wav")
+    print("Part 1.1: Spectrogram of progression.mp4")
     print("=" * 60)
 
     path = os.path.join(BASE, "progression.mp4")
     sample_rate = 44100  # known from ffprobe
 
-    # The file is AAC-in-M4A despite the .wav extension; decode via ffmpeg
+    # The file is AAC-in-M4A despite the .mp4 extension; decode via ffmpeg
     cmd = [
         "ffmpeg", "-loglevel", "error",
         "-i", path,
@@ -394,7 +394,7 @@ def part_3_3():
 
 
 # =============================================================================
-# Part 4.1 – Scale-Space: Verify G(σ) * G(τ) = G(√(σ²+τ²))
+# Part 4.1 – Scale-Space: Verify G(sigma) * G(\tau) = G(sqrt((sigma²+\tau²)))
 # =============================================================================
 
 def part_4_1():
@@ -402,7 +402,7 @@ def part_4_1():
     print("Part 4.1: Scale-Space Blob Visualization")
     print("=" * 60)
 
-    grid_size = 128  # Power of 2 for efficient FFT; large enough for σ=1,τ=2
+    grid_size = 128  # Power of 2 for efficient FFT; large enough for sigma=1,\tau=2
     sigma, tau = 1.0, 2.0
     sigma_combined = np.sqrt(sigma**2 + tau**2)
 
@@ -414,11 +414,11 @@ def part_4_1():
     Y = np.where(Y_idx <= grid_size // 2, Y_idx.astype(float),
                  Y_idx.astype(float) - grid_size)
 
-    B = gaussian_2d(X, Y, sigma)            # blob B = G(σ=1), peak at (0,0) corner
-    G_tau = gaussian_2d(X, Y, tau)           # Gaussian G(τ=2), peak at (0,0) corner
-    G_comb = gaussian_2d(X, Y, sigma_combined)  # Direct G(√5), peak at (0,0) corner
+    B = gaussian_2d(X, Y, sigma)            # blob B = G(sigma=1)
+    G_tau = gaussian_2d(X, Y, tau)           # Gaussian G(tau = 2)
+    G_comb = gaussian_2d(X, Y, sigma_combined)  # Direct G(sqrt5)
 
-    # Convolve B with G(τ) via FFT (circular, effectively linear since Gaussians decay fast)
+    # Convolve B with G(\tau) via FFT
     result_conv = np.real(ifft2(fft2(B) * fft2(G_tau)))
     diff = result_conv - G_comb
 
@@ -430,9 +430,9 @@ def part_4_1():
 
     fig, axes = plt.subplots(1, 4, figsize=(22, 5))
     data_titles = [
-        (B_vis,    f"B = G(σ={sigma})\n(blob image)"),
-        (conv_vis, f"B * G(τ={tau})\n[FFT convolution]"),
-        (comb_vis, f"G(σ=√(σ²+τ²)={sigma_combined:.2f})\n[direct model]"),
+        (B_vis,    rf"$B = G(\sigma={sigma})$   Blob image"),
+        (conv_vis, rf"$B * G(\tau ={tau})$  FFT convolution"),
+        (comb_vis, rf"$G(\sigma = \sqrt{{\sigma^2+\tau^2}} = {sigma_combined:.2f})$ Direct model"),
         (diff_vis, "Difference\n(conv – direct)"),
     ]
     cmaps = ["viridis", "viridis", "viridis", "RdBu_r"]
@@ -442,23 +442,23 @@ def part_4_1():
         ax.axis("off")
         fig.colorbar(im, ax=ax, fraction=0.046)
 
-    plt.suptitle("Eq.(1) Verification: G(σ) * G(τ) = G(√(σ²+τ²))", fontsize=13)
+    plt.suptitle(rf"Eq.(1) Verification: $G(\sigma) * G(\tau) = G(\sqrt{{\sigma^2+\tau^2)}}$", fontsize=13)
     plt.tight_layout()
     plt.savefig(os.path.join(OUTPUT_DIR, "part_4_1.png"), dpi=150)
     plt.close()
-    print(f"  σ={sigma}, τ={tau}, σ_combined={sigma_combined:.4f}")
+    print(rf"  \sigma={sigma}, \tau={tau}, sigma_combined={sigma_combined:.4f}")
     print(f"  Max |difference|: {np.max(np.abs(diff)):.2e}")
     print("  Saved part_4_1.png")
     print()
 
 
 # =============================================================================
-# Part 4.3.iii – Plot H(0,0,τ) vs τ
+# Part 4.3.iii – Plot H(0,0,\tau) vs \tau
 # =============================================================================
 
 def part_4_3_iii():
     print("=" * 60)
-    print("Part 4.3.iii: H(0,0,τ) vs τ")
+    print("Part 4.3.iii: H(0,0,tau) vs tau")
     print("=" * 60)
 
     sigma = 1.0
@@ -471,16 +471,16 @@ def part_4_3_iii():
 
     fig, ax = plt.subplots(figsize=(10, 5))
     ax.plot(tau_vals, H00, "b-", linewidth=2, 
-            label=r"$H(0,0,\tau) = -\tau / [\pi(\sigma^2+\tau^2)^2]$")
+            label=rf"$H(0,0,\tau) = \frac{{-\tau}}{{\pi(\sigma^2+\tau^2)^2}}$")
     ax.axvline(x=tau_ext, color="r", linestyle="--",
-               label=rf"Minimum at $\tau = \sigma/\sqrt{{3}}$ = {tau_ext:.3f}")
+               label=rf"Minimum at $\tau = \frac{{\sigma}}{{\sqrt{{3}}}} = {tau_ext:.3f}$")
     ax.axhline(y=0, color="k", linewidth=0.7)
     ax.scatter([tau_ext], [H_ext], color="r", zorder=5)
-    ax.set_xlabel(r"$\tau$ (scale parameter)", fontsize=12)
-    ax.set_ylabel(r"$H(0,0,\tau)$", fontsize=12)
+    ax.set_xlabel(rf"$\tau$ (scale parameter)", fontsize=12)
+    ax.set_ylabel(rf"$H(0,0,\tau)$", fontsize=12)
     ax.set_title(
-        r"Scale-Normalized Laplacian at origin: $H(0,0,\tau) = -\tau/[\pi(\sigma^2+\tau^2)^2]$"
-        f"\n(σ = {sigma})",
+        rf"Scale-Normalized Laplacian at origin: $H(0,0,\tau) = \frac{{-\tau}}{{\pi(\sigma^2+\tau^2)^2}}  $"
+        rf"             $(\sigma = {sigma})$",
         fontsize=11
     )
     ax.legend(fontsize=10)
@@ -488,8 +488,8 @@ def part_4_3_iii():
     plt.tight_layout()
     plt.savefig(os.path.join(OUTPUT_DIR, "part_4_3_iii.png"), dpi=150)
     plt.close()
-    print(f"  H(0,0,τ) = -τ/[π(σ²+τ²)²]  with σ={sigma}")
-    print(f"  Extremal τ = σ/√3 = {tau_ext:.3f},  H(0,0,σ/√3) = {H_ext:.6f}")
+    print(f"  H(0,0,tau) = -tau/[pi(sigma^2+tau^2)^2]  with sigma={sigma}")
+    print(f"  Extremal tau = sigma/sqrt(3) = {tau_ext:.3f},  H(0,0,sigma/sqrt 3) = {H_ext:.6f}")
     print("  Saved part_4_3_iii.png")
     print()
 
