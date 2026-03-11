@@ -235,60 +235,54 @@ def part_2_1():
     corners = corner_peaks(harris_resp, min_distance=25, threshold_rel=0.05)
     print(f"Harris detected {len(corners)} corners")
 
-    # ── Step 2: Heuristic — find the 4 label corners via extreme projections ──
-    # The 4 card corners are the most extreme points in the image. Text corners
-    # are all interior to the card, so they never win any of these extremes.
-    #   min(r + c)  →  upper-left  (UL)
-    #   max(r + c)  →  lower-right (LR)
-    #   min(r - c)  →  upper-right (UR)
-    #   max(r - c)  →  lower-left  (LL)
-    r = corners[:, 0].astype(float)
-    c = corners[:, 1].astype(float)
+    # ── Step 2: Find the 4 true label corners from the binary card mask ──
+    # The card has a physical fold/notch at one corner. Harris detects the
+    # fold as a strong corner feature, so extreme projections on Harris points
+    # land on the fold rather than the true card corner.
+    # Fix: Otsu-threshold the image to isolate the white card region.
+    # A physical concavity (fold) can never win an extreme projection on the
+    # white pixel set, so all 4 resulting points are the true card corners.
+    from skimage.filters import threshold_otsu
+    t_otsu = threshold_otsu(img)
+    mask = img > t_otsu
+    ys, xs = np.where(mask)
+    print(f"Otsu threshold: {t_otsu:.3f}")
 
-    p_ul = corners[np.argmin(r + c)]
-    p_lr = corners[np.argmax(r + c)]
-    p_ur = corners[np.argmin(r - c)]
-    p_ll = corners[np.argmax(r - c)]
+    rm, cm = ys.astype(float), xs.astype(float)
+    p_ul = np.array([ys[np.argmin(rm + cm)], xs[np.argmin(rm + cm)]])
+    p_lr = np.array([ys[np.argmax(rm + cm)], xs[np.argmax(rm + cm)]])
+    p_ur = np.array([ys[np.argmin(rm - cm)], xs[np.argmin(rm - cm)]])
+    p_ll = np.array([ys[np.argmax(rm - cm)], xs[np.argmax(rm - cm)]])
 
     print("Label corners (row, col):")
     for name, p in [("UL", p_ul), ("UR", p_ur), ("LL", p_ll), ("LR", p_lr)]:
         print(f"  {name}: row={p[0]}, col={p[1]}")
 
-    # ── Step 3: Estimate rotation from the two long sides ────────────────
+    # ── Step 3: Estimate rotation by averaging the two long sides ────────
     # The label is ~90° CCW from its readable orientation, so its long sides
     # (left: UL→LL, right: UR→LR) run roughly vertically in the image.
-    # arctan2(drow, dcol) gives the angle of each side from horizontal.
-    # For a nearly vertical side this is ~90°.
-    # Heuristic: the label may have a physical notch at one corner (which
-    # Harris detects instead of the true geometric corner). We pick the long
-    # side whose angle is closest to 90°, since the other side is likely
-    # affected by a spurious corner.
+    # arctan2(drow, dcol) gives each side's angle from horizontal (~90°).
+    # With both corners now correct we can average for a robust estimate.
     vec_left  = p_ll - p_ul   # UL → LL  (left long side)
     vec_right = p_lr - p_ur   # UR → LR  (right long side)
 
     angle_left  = np.degrees(np.arctan2(vec_left[0],  vec_left[1]))
     angle_right = np.degrees(np.arctan2(vec_right[0], vec_right[1]))
-
-    # Select the side closest to vertical (90°) as the reliable estimate
-    if abs(angle_left - 90) <= abs(angle_right - 90):
-        angle_long = angle_left
-        print(f"Using LEFT long side (angle {angle_left:.2f}°, dev {abs(angle_left-90):.2f}°)")
-    else:
-        angle_long = angle_right
-        print(f"Using RIGHT long side (angle {angle_right:.2f}°, dev {abs(angle_right-90):.2f}°)")
+    angle_avg   = (angle_left + angle_right) / 2
 
     print(f"Long-side angle left : {angle_left:.2f}°")
     print(f"Long-side angle right: {angle_right:.2f}°")
+    print(f"Average long-side angle : {angle_avg:.2f}°")
 
     # skimage.transform.rotate: positive = CCW, negative = CW.
-    # To make the long side horizontal we rotate CW by angle_long (≈ 90°).
-    rotation_angle = -angle_long
+    # To make the long side horizontal we rotate CW by angle_avg (≈ 90°).
+    rotation_angle = -angle_avg
     print(f"Applied rotation (skimage): {rotation_angle:.2f}°")
 
     # ── Step 4: Rotate ───────────────────────────────────────────────────
     rotated = rotate(img, rotation_angle, resize=True)
 
-    # ── Figure 1: All Harris corners + label corners overlaid ────────────
+    # ── Figure 1: Harris corners + true label corners overlaid ───────────
     fig, ax = plt.subplots(figsize=(6, 9))
     ax.imshow(img, cmap="gray", vmin=0, vmax=1)
     ax.scatter(corners[:, 1], corners[:, 0],
