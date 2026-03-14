@@ -5,9 +5,14 @@ import numpy as np
 from PIL import Image
 from skimage.feature import corner_harris, corner_peaks
 from skimage.transform import rotate
+from scipy.ndimage import gaussian_filter
 import os
 from scipy.ndimage import correlate
-from skimage import data
+from skimage import data, io, color
+from sklearn.decomposition import PCA
+from sklearn.feature_extraction.image import extract_patches_2d
+from scipy.ndimage import convolve
+from sklearn.cluster import KMeans
 
 
 ###### 1.4 #########
@@ -319,5 +324,201 @@ def part_2_1():
     print(f"Saved: {OUTPUT_DIR}/task2_rotated.png")
 
 
+
+
+
+
+
+
+#Part 3 #####################################################################################################
+
+# n-jet filter bank up to the third derivatibe
+def n_jet(image, sigma):
+
+    responses = {}
+    responses["G"] = gaussian_filter(image, sigma=sigma, order=(0,0))
+    responses["Gx"] = gaussian_filter(image, sigma=sigma, order=(0,1))
+    responses["Gy"] = gaussian_filter(image, sigma=sigma, order=(1,0))
+    responses["Gxx"] = gaussian_filter(image, sigma=sigma, order=(0,2))
+    responses["Gxy"] = gaussian_filter(image, sigma=sigma, order=(1,1))
+    responses["Gyy"] = gaussian_filter(image, sigma=sigma, order=(2,0))
+    responses["Gxxx"] = gaussian_filter(image, sigma=sigma, order=(0,3))
+    responses["Gxxy"] = gaussian_filter(image, sigma=sigma, order=(1,2))
+    responses["Gxyy"] = gaussian_filter(image, sigma=sigma, order=(2,1))
+    responses["Gyyy"] = gaussian_filter(image, sigma=sigma, order=(3,0))
+
+    #returns a dictionary:)
+    return responses
+
+
+# impulse generator for visualization
+def create_impulse(size=31):
+    img = np.zeros((size, size)) 
+    center = size // 2
+    img[center, center] = 1
+    return img
+
+def save_njet_grid(responses, sigma, output_dir, prefix="filter", cmap="seismic"):
+
+    #create output directory
+    os.makedirs(output_dir, exist_ok=True)
+
+    #create filter and plot axes (2 times 5 images)
+    fig, axes = plt.subplots(2, 5, figsize=(12, 5)) 
+
+    for ax, (name, img) in zip(axes.flat, responses.items()):
+        v = np.max(np.abs(img))
+        ax.imshow(img, cmap=cmap, vmin=-v, vmax=v)
+        ax.set_title(fr"{name}  $\sigma=${sigma}", fontsize=9)
+        ax.axis("off")
+
+    plt.tight_layout()
+
+    filepath = os.path.join(output_dir, f"{prefix}_njet_sigma{sigma}.png")
+    plt.savefig(filepath, dpi=150)
+
+    plt.close()
+
+
+
+
+
+def part_3_1():
+
+    #load image in greyscale
+    img = load_image("input/sunandsea.jpg")
+    impulse = create_impulse(size= 100)
+
+    #use the filter
+    img = n_jet(img, 5)
+    impulse = n_jet(impulse, 5)
+
+    save_njet_grid(img, sigma= 5, output_dir="output", prefix="3_1_image_njet",cmap= "grey" )
+    save_njet_grid(impulse, sigma= 5, output_dir="output", prefix="3_1_impulse_njet",cmap= "grey" )
+
+
+def learn_pca_filterbank(image, patch_size=8, n_filters=16, max_patches=10000):
+    # Extract patches and flatten
+    patches = extract_patches_2d(image, (patch_size, patch_size), max_patches=max_patches, random_state=42)
+    X = patches.reshape(len(patches), -1)
+    
+    # Fit PCA
+    pca = PCA(n_components=n_filters)
+    pca.fit(X)
+    
+    # Reshape each component back to 2D
+    filters = pca.components_.reshape(n_filters, patch_size, patch_size)
+    
+    return filters  
+
+
+
+def apply_pca_filterbank(image, filters, n=1):
+    
+    responses = {}
+    for i in range(n):
+        responses[f"PC{i+1}"] = convolve(image, filters[i], mode='reflect')
+    
+    return responses
+
+
+def pca_filterbank_plot(responses, output_dir, prefix="filter", cmap="seismic"):
+
+    n_filters = len(responses)
+    n_rows = n_filters // 8 
+
+    os.makedirs(output_dir, exist_ok=True)
+
+    fig, axes = plt.subplots(n_rows, 8, figsize=(12, n_rows * 2))
+
+    for ax, (name, img) in zip(axes.flat, responses.items()):
+        v = np.max(np.abs(img))
+        ax.imshow(img, cmap=cmap, vmin=-v, vmax=v)
+        ax.set_title(name, fontsize=7)
+        ax.axis("off")
+
+    plt.tight_layout()
+
+    filepath = os.path.join(output_dir, f"3_2_{prefix}_pca_filterbank.png")
+    plt.savefig(filepath, dpi=150)
+    plt.close()
+
+def part_3_2():
+    # Load image
+    image = load_image("input/sunandsea.jpg")
+    impulse = create_impulse(size=8)
+
+    #learn filters from image
+    filters = learn_pca_filterbank(image, n_filters=64)
+
+    # visualize filters using impulse image
+    filter_responses = apply_pca_filterbank(impulse, filters, n=64)
+    pca_filterbank_plot(filter_responses, "output", prefix="filters", cmap="grey")
+
+    #apply to actual image and visualize
+    image_responses = apply_pca_filterbank(image, filters, n=64)
+    pca_filterbank_plot(image_responses, "output", prefix="responses", cmap="grey")
+
+
+
+
+
+def responses_to_feature_matrix(responses):
+    stacked = np.stack(list(responses.values())) #H x W x channels(features)
+    X = stacked.reshape(len(responses), -1).T #pixels x channels(feature)
+    return X
+
+def reduce_features(X, n_components=3):
+    pca = PCA(n_components=n_components)
+    X_reduced = pca.fit_transform(X)
+    return X_reduced
+
+def kmeans_segment(X, image_shape, n_clusters=3):
+    kmeans = KMeans(n_clusters=n_clusters, random_state=42)
+    kmeans.fit(X)
+    segmentation = kmeans.labels_.reshape(image_shape)
+    return segmentation
+
+
+def save_segmentation(segmentation, output_dir, prefix="segmentation"):
+    os.makedirs(output_dir, exist_ok=True)
+    plt.figure(figsize=(10, 8))
+    plt.imshow(segmentation, cmap='tab10')
+    plt.title(f"{prefix} Segmentation (K=3)")
+    plt.axis('off')
+    plt.savefig(os.path.join(output_dir, f"3_3{prefix}.png"), dpi=150, bbox_inches ='tight')
+    plt.close()
+
+
+
+def part_3_3():
+    image = load_image("input/sunandsea.jpg")
+
+    # PCA filterbank
+    pca_filters = learn_pca_filterbank(image, n_filters=64) # learn filters
+    pca_responses = apply_pca_filterbank(image, pca_filters, n=3) # apply filters
+    pca_X = responses_to_feature_matrix(pca_responses) # convert to feature matrix from dictionary
+    pca_segmented = kmeans_segment(pca_X, image.shape, n_clusters=3) #segment
+    save_segmentation(pca_segmented, "output", prefix="pca_segmentation") #save segmentation
+
+    # N-Jet
+    njet_responses = n_jet(image, sigma=5) #apply filters
+    njet_X = responses_to_feature_matrix(njet_responses) # convert to feature matrix from dictionary
+    njet_X_reduced = reduce_features(njet_X, n_components=3) #reduce features using pca
+    njet_segmented = kmeans_segment(njet_X_reduced, image.shape, n_clusters=3) #segment
+    save_segmentation(njet_segmented, "output", prefix="njet_segmentation")# save it
+
+
+
+    
+
+
+
+    
+
+
 if __name__ == "__main__":
-    part_2_1()
+    #part_2_1()
+    part_3_1()
+    part_3_2()
+    part_3_3()
