@@ -484,7 +484,7 @@ def save_segmentation(segmentation, output_dir, prefix="segmentation"):
     os.makedirs(output_dir, exist_ok=True)
     plt.figure(figsize=(10, 8))
     plt.imshow(segmentation, cmap='tab10')
-    plt.title(f"{prefix} Segmentation (K=3)")
+    plt.title(f"{prefix} (K=3)")
     plt.axis('off')
     plt.savefig(os.path.join(output_dir, f"3_3{prefix}.png"), dpi=150, bbox_inches ='tight')
     plt.close()
@@ -506,7 +506,7 @@ def part_3_3():
     njet_X = responses_to_feature_matrix(njet_responses) # convert to feature matrix from dictionary
     njet_X_reduced = reduce_features(njet_X, n_components=3) #reduce features using pca
     njet_segmented = kmeans_segment(njet_X_reduced, image.shape, n_clusters=3) #segment
-    save_segmentation(njet_segmented, "output", prefix="njet_segmentation")# save it
+    save_segmentation(njet_segmented, "output", prefix="N-jet_segmentation")# save it
 
 
 
