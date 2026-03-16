@@ -12,8 +12,8 @@ from sklearn.feature_extraction.image import extract_patches_2d
 from sklearn.cluster import KMeans
 import os
 
-OUTPUT_DIR = "Assignment_6/output"
-BASE = "Assignment_6"
+BASE = os.path.dirname(os.path.abspath(__file__))
+OUTPUT_DIR = os.path.join(BASE, "output")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 
