@@ -4,6 +4,7 @@ from skimage.filters import threshold_otsu
 from PIL import Image
 import matplotlib.pyplot as plt
 import os
+from skimage.feature import canny, corner_harris, corner_peaks, peak_local_max
 
 #Load image in greyscale, and convert to numpy array
 def load_image_greyscale(filename):
@@ -138,6 +139,12 @@ def part_1_2():
 
 ################## Part 2 #################################################
 
+
+def find_harris_corners(image, num_peaks=250, sigma=2.0, k=0.05, min_distance=5):
+    """Find Harris corners as local maxima of the corner response map."""
+    response = corner_harris(image, method="k", sigma=sigma, k=k)
+    coords = corner_peaks(response, num_peaks=num_peaks, min_distance=min_distance)
+    return coords, response
 
 
 if __name__ == "__main__":
