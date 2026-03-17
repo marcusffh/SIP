@@ -1,68 +1,138 @@
 import numpy as np
+from skimage import io, color, feature
+from skimage.filters import threshold_otsu
+from PIL import Image
+import matplotlib.pyplot as plt
+import os
+
+#Load image in greyscale, and convert to numpy array
+def load_image_greyscale(filename):
+    img = Image.open(filename).convert("L")
+    return np.array(img, dtype=np.uint8)
+
+
+def save_image(image, title, output_folder="output", filename=None, cmap="gray"):
+    """
+    Saves an image with a title to a folder without displaying it.
+
+    Parameters:
+    - image: numpy array (grayscale or RGB)
+    - title: string (used as figure title + filename fallback)
+    - output_folder: string
+    - filename: optional custom filename
+    - cmap: colormap for grayscale images
+    """
+
+    # Ensure output folder exists
+    if not os.path.exists(output_folder):
+        os.makedirs(output_folder)
+
+    # Auto-generate filename if not provided
+    if filename is None:
+        filename = title.lower().replace(" ", "_") + ".png"
+
+    save_path = os.path.join(output_folder, filename)
+
+    # Create figure WITHOUT showing
+    fig = plt.figure()
+    
+    if len(image.shape) == 2:
+        plt.imshow(image, cmap=cmap)
+    else:
+        plt.imshow(image)
+
+    plt.title(title)
+    plt.axis("off")
+
+    # Save and immediately close (prevents display)
+    fig.savefig(save_path, bbox_inches="tight", dpi=300)
+    plt.close(fig)
+
+    print(f"Saved to: {save_path}")
+
+def save_intensity_histogram(image, bins,title,  output_folder="output", filename= None):
+    """
+    Saves a pixel intensity histogram to disk instead of displaying it.
+
+    Parameters:
+    - image: numpy array (assumes values in [0,255])
+    - bins: number of bins
+    - output_folder: directory to save the image
+    - filename: output file name
+    """
+
+    # Ensure output folder exists
+    if not os.path.exists(output_folder):
+        os.makedirs(output_folder)
+
+    # Auto-generate filename if not provided
+    if filename is None:
+        filename = title.lower().replace(" ", "_") + ".png"
+
+    save_path = os.path.join(output_folder, filename)
+
+    # Flatten image
+    values = image.flatten()
+
+    # Create figure
+    fig = plt.figure()
+
+    plt.hist(values, bins=bins, range=(0, 255), color='gray', alpha=1)
+    plt.yscale('linear')
+    plt.title(title)
+    plt.xlabel("Intensity Value")
+    plt.ylabel("Number of Pixels")
+
+    # Save and close
+    fig.savefig(save_path, bbox_inches="tight", dpi=300)
+    plt.close(fig)
+
+    print(f"Histogram saved to: {save_path}")
 
 ############ Part 1 ######################################
+############otsu segmentation############
 
-# Otsu function from VIP problem 5
-#Based on the 1979_otsu_IEEESys.pdf document and the slides segmentation.pdf from The VIP course
-def otsu(image):
+def otsu_threshold_applied(image): #assumes greyscale image in intensity range (0-255)
+    img_array = np.array(image).astype(np.uint8) # convert to numpy array
+    threshold = threshold_otsu(img_array) #find threshold using otsu
+    thresholded_img = np.where(img_array >=threshold, 255,0) #threshold
+    return  thresholded_img
 
-    # Compute histogram
-    histogram, bin_edges = np.histogram(image, bins=256, range=(0, 256))
-
-    # Normalize historgram and regard it as a probability distribution P(i) = h(i) /N
-    p_i = histogram / np.sum(histogram) 
-
-    total_mean = np.sum(np.arange(256) * p_i)  # mean intensity of the image
-
-    max_variance = 0 # initial maximum variance
-    threshold = 0   # initial threshold
-    w0 = 0  # initial  probability for class 0
-    w1 = 0  # initial probability for class 1 
-    mu_k = 0.0
-    epsilon = 1e-10
-    L = len(p_i)  # number of bins = 256
-
-    for i in range(L):
-        w0 += p_i[i]  #  probability for class 0 cumulative (equation 2)
-        w1 = 1 - w0  #  probability for class 1 (equation 3)
-
-        if w0 < epsilon or w1 < epsilon: # makes sure we dont divide by zero:)
-            continue
-
-        mu_k += i * p_i[i]  # cumulative mean up to bin i
-
-        mu0 =  mu_k / w0  # mean for class 0 (equation 4)
-
-        mu1 = (total_mean - mu_k) / w1  # mean for class 1 (equation 5) 
-
-        # Between class variance
-        variance = w0 * w1 * (mu1 - mu0) ** 2  #(equation 14)
-
-        if variance > max_variance: # find the maximum variance and corresponding threshold
-            max_variance = variance
-            threshold = i
-
-    return threshold
+def intensity_histogram(image, bins): # assumes int in range (0-255) and greyscale image
+    values = image.flatten()
+    plt.hist(values, bins=bins, range=(0, 255), color='gray', alpha=1)
+    plt.yscale('log')
+    plt.title("Pixel Intensity Histogram")
+    plt.xlabel("Intensity Value")
+    plt.ylabel("Number of Pixels")
+    plt.show()
 
 
-#wrapper
-def otsu_segment(image):
-    threshold = otsu(image)
-    segmented_image = (image >= threshold).astype(np.uint8)
-    return segmented_image
+def part_1_1():
+    #load image
+    img1_greyscale = load_image_greyscale("input/matrikelnumre_art.png")# greyscale
+    img2_greyscale = load_image_greyscale("input/matrikelnumre_nat.png")# greyscale
 
+    #perform threshold segmentation
+    img1_segmented = otsu_threshold_applied(img1_greyscale)
+    img2_segmented = otsu_threshold_applied(img2_greyscale)
 
+    # output greyscale and segmented images
+    save_image(img1_segmented, "matrikelnumre_art segmented", output_folder="output", filename=None, cmap="gray")
+    save_image(img2_segmented, "matrikelnumre_nat segmented", output_folder="output", filename=None, cmap="gray")
+    save_image(img1_greyscale, "matrikelnumre_art", output_folder="output", filename=None, cmap="gray")
+    save_image(img2_greyscale, "matrikelnumre_nat", output_folder="output", filename=None, cmap="gray")
 
+    #output histograms of greyscale images
+    save_intensity_histogram(img1_greyscale, bins = 256, title= "matrikelnumre_art intensity-histogram",  output_folder="output", filename= None)
+    save_intensity_histogram(img2_greyscale, bins = 256, title= "matrikelnumre_nat intensity-histogram",  output_folder="output", filename= None)
 
+############################## Canny edge detection
 
-
-
-
-
-
-
-
-
+def part_1_2():
+    img1_greyscale = load_image_greyscale("input/matrikelnumre_art.png")# load in greyscale
+    img1_edges = feature.canny(img1_greyscale, sigma= 1.0 ) # apply canny edge detection
+    save_image(img1_edges, "matrikelnumre_art edges", output_folder="output", filename=None, cmap="gray")
 
 
 
@@ -70,11 +140,7 @@ def otsu_segment(image):
 
 
 
+if __name__ == "__main__":
 
-
-
-
-
-
-
-
+    part_1_1()
+    part_1_2()
