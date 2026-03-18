@@ -231,9 +231,6 @@ def birds_eye_view(image, corners):
     """
     h, w = image.shape
 
-    # Swap to (x, y)
-    dst = np.array([[c[1], c[0]] for c in corners])
-
     # Destination rectangle
     src = np.array([
         [0, 0],        # top-left
@@ -243,7 +240,7 @@ def birds_eye_view(image, corners):
     ])
 
     tform = ProjectiveTransform()
-    tform.estimate(src, dst)
+    tform.estimate(src, corners)
 
     warped = warp(image, tform, output_shape=(h, w))
 
@@ -255,6 +252,8 @@ def part_2_2():
     img1_greyscale = load_image_greyscale("input/matrikelnumre_nat.png")# greyscale
 
     corners = [[302,387],[170, 1355], [1010,410], [779,1606]] # manually typed from printed output from task 2.1
+        # Swap to (x, y) from row colum
+    corners = np.array([[c[1], c[0]] for c in corners])
 
     #[top-left, top-right, bottom-left, bottom-right]
     img1_transformed = birds_eye_view(img1_greyscale, corners)
