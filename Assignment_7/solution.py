@@ -85,7 +85,7 @@ def save_image_with_corners(image, coords, title, output_folder="output", filena
     else:
         plt.imshow(image)
 
-    # 🔴 Plot corner points
+    # Plot corner points
     if coords is not None and len(coords) > 0:
         plt.plot(coords[:, 1], coords[:, 0], "r.", markersize=4)
 
@@ -199,6 +199,7 @@ def part_2_1():
 
     # load image
     img1_greyscale = load_image_greyscale("input/matrikelnumre_nat.png")# greyscale
+    img1 = np.array(Image.open("input/matrikelnumre_nat.png"))
 
     #preprocess
     img1_blur = gaussian(image = img1_greyscale, sigma = 9)
@@ -211,7 +212,7 @@ def part_2_1():
     print(f"Corner cordinates are {coords}")
 
     #save image
-    save_image_with_corners(img1_greyscale, coords, "matrikelnumre_nat corners" , output_folder="output", filename=None, cmap="gray")
+    save_image_with_corners(img1, coords, "matrikelnumre_nat corners" , output_folder="output", filename=None)
     save_image(img1_blur,  "matrikelnumre_nat gaussian blur sigma = 8", output_folder="output", filename=None, cmap="gray")
     save_image(img1_segmented,  "matrikelnumre_nat otsu segmentation", output_folder="output", filename=None, cmap="gray")
 
@@ -229,7 +230,7 @@ def birds_eye_view(image, corners):
         [top-left, top-right, bottom-left, bottom-right]
         each corner = (x, y) = (col, row)
     """
-    h, w = image.shape
+    h, w = image.shape[:2] # [:2] for handling color images
 
     # Destination rectangle
     src = np.array([
@@ -249,16 +250,16 @@ def birds_eye_view(image, corners):
 
 def part_2_2():
             # load image
-    img1_greyscale = load_image_greyscale("input/matrikelnumre_nat.png")# greyscale
+    img1 = np.array(Image.open("input/matrikelnumre_nat.png"))
 
     corners = [[302,387],[170, 1355], [1010,410], [779,1606]] # manually typed from printed output from task 2.1
         # Swap to (x, y) from row colum
     corners = np.array([[c[1], c[0]] for c in corners])
 
     #[top-left, top-right, bottom-left, bottom-right]
-    img1_transformed = birds_eye_view(img1_greyscale, corners)
+    img1_transformed = birds_eye_view(img1, corners)
 
-    save_image(img1_transformed,  "matrikelnumre_nat transformed", output_folder="output", filename=None, cmap="gray")
+    save_image(img1_transformed,  "matrikelnumre_nat transformed", output_folder="output", filename=None)
 
 
 
@@ -267,7 +268,7 @@ def part_2_2():
 
 if __name__ == "__main__":
 
-    # part_1_1()
-    # part_1_2()
-    # part_2_1()
+    #part_1_1()
+    #part_1_2()
+    #part_2_1()
     part_2_2()
