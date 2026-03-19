@@ -4,9 +4,12 @@ from skimage.filters import threshold_otsu
 from PIL import Image
 import matplotlib.pyplot as plt
 import os
+from scipy.ndimage import maximum_filter
 from skimage.filters import gaussian
 from skimage.feature import canny, corner_harris, corner_peaks, peak_local_max
-from skimage.transform import ProjectiveTransform, warp
+from skimage.transform import ProjectiveTransform, warp, hough_line, hough_line_peaks, hough_circle, hough_circle_peaks
+from skimage.morphology import binary_opening, binary_closing, disk
+
 
 #Load image in greyscale, and convert to numpy array
 def load_image_greyscale(filename):
@@ -262,7 +265,243 @@ def part_2_2():
     save_image(img1_transformed,  "matrikelnumre_nat transformed", output_folder="output", filename=None)
 
 
+########## Part 3 ############
 
+
+def implemented_hough_line(edge_image, num_thetas=180):
+    """
+    Compute the Hough transform for straight lines
+
+    Parameters:
+    edge_image : 2D ndarray, binary edge image where nonzero pixels are treated as edge points
+    num_thetas : int, the number of theta samples in [0, pi)
+
+    Returns:
+    H : 2D ndarray, Hough accumulator array
+    rhos : 1D ndarray, discretized rho values
+    thetas : 1D ndarray, discretized theta values in radians
+    """
+    height, width = edge_image.shape
+
+    # maximum possible distance from origin = image diagonal
+    diag_len = int(np.ceil(np.sqrt(height**2 + width**2)))
+
+    # discretize rho and theta
+    rhos = np.arange(-diag_len, diag_len + 1)
+    thetas = np.linspace(0, np.pi, num_thetas, endpoint=False)
+
+    # accumulator
+    H = np.zeros((len(rhos), len(thetas)), dtype=np.uint64)
+
+    # precompute sin and cos
+    cos_t = np.cos(thetas)
+    sin_t = np.sin(thetas)
+
+    # find edge pixels
+    ys, xs = np.nonzero(edge_image)
+
+    # vote in accumulator
+    for x, y in zip(xs, ys):
+        for theta_idx in range(len(thetas)):
+            rho = x * cos_t[theta_idx] + y * sin_t[theta_idx]
+            rho_idx = int(np.round(rho)) + diag_len
+            H[rho_idx, theta_idx] += 1
+
+    return H, rhos, thetas
+
+
+def find_hough_peaks(H, num_peaks=4, threshold=0.5, neighborhood_size=9):
+    H_max = maximum_filter(H, size=neighborhood_size)
+    peaks_mask = (H == H_max) & (H > threshold * H.max())
+
+    peak_indices = np.argwhere(peaks_mask)
+    peak_values = [H[r, t] for r, t in peak_indices]
+    sorted_idx = np.argsort(peak_values)[::-1]
+
+    peak_indices = peak_indices[sorted_idx]
+    return peak_indices[:num_peaks]
+
+def draw_lines(ax, image, peaks, rhos, thetas, title, color='r'):
+    ax.imshow(image, cmap='gray')
+    ax.set_xlim((0, image.shape[1]))
+    ax.set_ylim((image.shape[0], 0))
+
+    for rho_idx, theta_idx in peaks:
+        rho = rhos[rho_idx]
+        theta = thetas[theta_idx]
+
+        a = np.cos(theta)
+        b = np.sin(theta)
+
+        x0 = a * rho
+        y0 = b * rho
+
+        x1 = x0 + 1000 * (-b)
+        y1 = y0 + 1000 * (a)
+        x2 = x0 - 1000 * (-b)
+        y2 = y0 - 1000 * (a)
+
+        ax.plot((x1, x2), (y1, y2), color=color, linewidth=2)
+
+    ax.set_title(title)
+    ax.axis('off')
+
+img = io.imread("input/cross.png")
+
+
+if img.ndim == 3:
+    gray = color.rgb2gray(img)
+else:
+    gray = img
+
+edges = gray > 0.5
+
+# implemented Hough transform
+H_my, rhos_my, thetas_my = implemented_hough_line(edges, num_thetas=180)
+peaks_my = find_hough_peaks(H_my, num_peaks=4, threshold=0.4, neighborhood_size=9)
+
+# skimage Hough transform
+H_sk, thetas_sk, rhos_sk = hough_line(edges)
+accums, angles_sk, dists_sk = hough_line_peaks(H_sk, thetas_sk, rhos_sk, num_peaks=4)
+
+# convert skimage peaks to index pairs for reuse in drawing
+peaks_sk = []
+for angle, dist in zip(angles_sk, dists_sk):
+    theta_idx = np.argmin(np.abs(thetas_sk - angle))
+    rho_idx = np.argmin(np.abs(rhos_sk - dist))
+    peaks_sk.append((rho_idx, theta_idx))
+
+fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+
+axes[0, 0].imshow(edges, cmap='gray')
+axes[0, 0].set_title("Input image: cross.png")
+axes[0, 0].axis('off')
+
+axes[0, 1].imshow(
+    H_my,
+    cmap='hot',
+    aspect='auto',
+    extent=[np.rad2deg(thetas_my[0]), np.rad2deg(thetas_my[-1]), rhos_my[-1], rhos_my[0]]
+)
+axes[0, 1].set_title("Implemented Hough transform")
+axes[0, 1].set_xlabel("Theta (degrees)")
+axes[0, 1].set_ylabel("Rho")
+
+draw_lines(axes[1, 0], edges, peaks_my, rhos_my, thetas_my, "Implemented detected lines", color='red')
+draw_lines(axes[1, 1], edges, peaks_sk, rhos_sk, thetas_sk, "skimage detected lines", color='lime')
+
+plt.tight_layout()
+plt.show()
+
+
+
+def detect_blue_circle(img_transformed):
+    """
+    Detect the large blue circle in the transformed map image
+
+    Parameters:
+    img_transformed : ndarray, transformed bird's-eye-view image
+
+    Returns:
+    cx, cy, radius : int, detected circle center coordinates and radius
+    blue_mask : ndarray, binary mask of blue pixels
+    edges : ndarray, edge image used for Hough circle detection
+    """
+    img = img_transformed[..., :3]
+
+    if img.dtype != np.float32 and img.dtype != np.float64:
+        img = img.astype(np.float32) / 255.0
+
+    R = img[..., 0]
+    G = img[..., 1]
+    B = img[..., 2]
+
+    # Blue mask
+    blue_mask = (
+        (B > 0.5) &
+        (B > R + 0.1) &
+        (B > G + 0.1)
+    )
+
+    # Clean mask
+    blue_mask = binary_opening(blue_mask, disk(2))
+    blue_mask = binary_closing(blue_mask, disk(3))
+
+    # Restrict search region
+    h, w = blue_mask.shape
+    y0, y1 = int(0.2 * h), int(0.6 * h)
+    x0, x1 = int(0.3 * w), int(0.8 * w)
+
+    roi = blue_mask[y0:y1, x0:x1]
+
+    # Edge detection on ROI
+    edges = canny(roi.astype(float), sigma=1.5)
+
+    # Radius range for Hough circle
+    hough_radii = np.arange(20, 60, 2)
+
+    # Circle Hough transform
+    hough_res = hough_circle(edges, hough_radii)
+
+    accums, cx, cy, radii = hough_circle_peaks(
+        hough_res,
+        hough_radii,
+        total_num_peaks=1
+    )
+
+    if len(cx) == 0:
+        raise ValueError("No circle detected")
+
+    # Convert back to full image coordinates
+    cx = cx[0] + x0
+    cy = cy[0] + y0
+    radius = radii[0]
+
+    return cx, cy, radius, blue_mask, edges
+
+
+def plot_result(img_transformed, cx, cy, radius):
+    fig, ax = plt.subplots(figsize=(8, 8))
+    ax.imshow(img_transformed)
+
+    # Red center dot
+    ax.plot(cx, cy, 'ro', markersize=6)
+
+    # Red circle
+    circle = plt.Circle((cx, cy), radius, color='red', fill=False, linewidth=2)
+    ax.add_patch(circle)
+
+    ax.set_title("Detected blue circle centre")
+    ax.axis("off")
+    plt.show()
+
+# Load transformed image
+img_transformed = np.array(Image.open("output/matrikelnumre_nat_transformed.png"))
+
+# Detect circle
+cx, cy, radius, blue_mask, edges = detect_blue_circle(img_transformed)
+
+fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+
+axes[0].imshow(img_transformed)
+axes[0].set_title("Transformed image")
+axes[0].axis("off")
+
+axes[1].imshow(blue_mask, cmap="gray")
+axes[1].set_title("Blue mask")
+axes[1].axis("off")
+
+axes[2].imshow(edges, cmap="gray")
+axes[2].set_title("Edges for Hough circle")
+axes[2].axis("off")
+
+plt.tight_layout()
+plt.show()
+
+plot_result(img_transformed, cx, cy, radius)
+
+print(f"Circle centre (x, y): ({cx}, {cy})")
+print(f"Radius: {radius}")
 
 
 
